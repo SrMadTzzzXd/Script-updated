@@ -1,26 +1,44 @@
--- Antikill Script + UI Organizada y Limpia
-
+-- Servicios principales
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
+local CoreGui = game:GetService("CoreGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
 local player = Players.LocalPlayer
+local ATMModule = require(ReplicatedStorage.Modules.Game.ATM.ATM)
 
 -- Estado y control
 local antikillEnabled = false
+local espEnabled = false
 local evading = false
+local currentEvasionThread = nil
 
--- Función para obtener el personaje
-local function getCharacter()
-    local character = player.Character or player.CharacterAdded:Wait()
-    local humanoid = character:WaitForChild("Humanoid")
-    local hrp = character:WaitForChild("HumanoidRootPart")
-    return character, humanoid, hrp
-end
+-- 🧼 Cancelar evasión anterior al respawn
+player.CharacterAdded:Connect(function(char)
+    evading = false
+    if currentEvasionThread then
+        task.cancel(currentEvasionThread)
+        currentEvasionThread = nil
+    end
 
--- Loop de evasión
+    -- Asegura que el humanoid esté cargado
+    local humanoid = char:WaitForChild("Humanoid", 5)
+    if humanoid and humanoid.Health > 30 then
+        print("👤 Nuevo personaje cargado con salud suficiente. Evasión desactivada.")
+    end
+end)
+
+-- 🛡️ Loop de evasión automática
 RunService.RenderStepped:Connect(function()
     if not antikillEnabled then return end
 
-    local _, humanoid, hrp = getCharacter()
+    local character = player.Character
+    if not character then return end
+
+    local humanoid = character:FindFirstChildWhichIsA("Humanoid")
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not humanoid or not hrp then return end
 
     if humanoid.Health <= 16 and not evading then
         evading = true
@@ -29,42 +47,92 @@ RunService.RenderStepped:Connect(function()
         local originPosition = hrp.Position
         local elevatedHeight = originPosition.Y + 10
 
-        task.spawn(function()
-            while humanoid.Health < 30 and antikillEnabled do
-                local randomOffset = Vector3.new(
-                    math.random(-40, 40),
-                    0,
-                    math.random(-40, 40)
-                )
+        currentEvasionThread = task.spawn(function()
+            while humanoid and humanoid.Health < 30 and antikillEnabled do
+                if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then break end
 
+                local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+                local randomOffset = Vector3.new(math.random(-40, 40), 0, math.random(-40, 40))
                 local targetPosition = originPosition + randomOffset
                 local moveDirection = (targetPosition - hrp.Position).Unit
                 local moveDistance = math.random(10, 25)
 
                 hrp.Velocity = moveDirection * moveDistance * 10
                 hrp.CFrame = CFrame.new(hrp.Position.X, elevatedHeight, hrp.Position.Z)
-
                 task.wait(0.05)
             end
 
-            print("🟢 Salud restaurada o antikill desactivado. Evasión finalizada.")
+            print("🟢 Salud restaurada o evasión finalizada.")
             evading = false
+            currentEvasionThread = nil
         end)
     end
 end)
 
--- Cargar UI HydraHub
-local UILib = loadstring(game:HttpGet('https://raw.githubusercontent.com/StepBroFurious/Script/main/HydraHubUi.lua'))()
-local Window = UILib.new("Grand Piece Online", game.Players.LocalPlayer.UserId, "Buyer")
+-- 🔍 ATM ESP Mejorado
+local function updateHighlight(model, isActive)
+    local id = "ATMESP_" .. model:GetDebugId()
+    local existing = CoreGui:FindFirstChild(id)
+    if not existing then
+        local highlight = Instance.new("Highlight")
+        highlight.Name = id
+        highlight.Adornee = model
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+        highlight.OutlineTransparency = 0
+        highlight.Parent = CoreGui
+        existing = highlight
+    end
 
--- Hacer la UI movible
+    existing.FillColor = isActive and Color3.fromRGB(0, 255, 0) or Color3.fromRGB(255, 0, 0)
+    existing.FillTransparency = 0.5
+end
+
+local function clearESP()
+    for _, obj in ipairs(CoreGui:GetChildren()) do
+        if obj:IsA("Highlight") and obj.Name:match("^ATMESP_") then
+            obj:Destroy()
+        end
+    end
+end
+
+local function drawESP()
+    if not espEnabled then
+        clearESP()
+        return
+    end
+
+    for _, atm in ipairs(Workspace.Map.Props:GetChildren()) do
+        if atm.Name == "ATM" then
+            local isActive = false
+            for _, obj in ATMModule.class.objects do
+                if obj.instance == atm then
+                    isActive = not obj.states.disabled:get()
+                    break
+                end
+            end
+            updateHighlight(atm, isActive)
+        end
+    end
+end
+
+-- Ejecutar ESP por frame
+RunService.RenderStepped:Connect(function()
+    pcall(drawESP)
+end)
+
+-- UI - HydraHub
+local UILib = loadstring(game:HttpGet('https://raw.githubusercontent.com/StepBroFurious/Script/main/HydraHubUi.lua'))()
+local Window = UILib.new("Grand Piece Online", player.UserId, "Buyer")
+
+-- UI draggable
 if Window and Window._ScreenGui and Window._ScreenGui:FindFirstChildOfClass("Frame") then
     local frame = Window._ScreenGui:FindFirstChildOfClass("Frame")
     frame.Active = true
     frame.Draggable = true
 end
 
--- Crear categorías y secciones
+-- Categorías y pestañas
 local Category1 = Window:Category("Main", "http://www.roblox.com/asset/?id=8395621517")
 
 -- 🛡️ AntiKill Section
@@ -80,12 +148,22 @@ AntiKillSection:Toggle({
     print("🔘 AntiKill activado:", antikillEnabled)
 end)
 
--- ⚔️ Combat Section (Vacía)
-local CombatTab = Category1:Button("Combat", "http://www.roblox.com/asset/?id=8395747586")
-local CombatSection = CombatTab:Section("Ataques", "Left")
--- Futuras herramientas de combate aquí
+-- 🔍 ESP Section
+local ESPTab = Category1:Button("ATM ESP", "http://www.roblox.com/asset/?id=8395747586")
+local ESPSection = ESPTab:Section("ATM Visuals", "Left")
 
--- 🧩 Misc Section (Vacía)
+ESPSection:Toggle({
+    Title = "ATM ESP",
+    Description = "Muestra los ATMs activos en verde y los inactivos en rojo.",
+    Default = false
+}, function(value)
+    espEnabled = value
+    if not value then
+        clearESP()
+    end
+    print("🔘 ATM ESP activado:", espEnabled)
+end)
+
+-- 🔧 Misc Section
 local MiscTab = Category1:Button("Misc", "http://www.roblox.com/asset/?id=8395747586")
 local MiscSection = MiscTab:Section("Extras", "Left")
--- Funciones varias o utilidades futuras aquí

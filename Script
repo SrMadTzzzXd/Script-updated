@@ -1,0 +1,91 @@
+-- Antikill Script + UI Organizada y Limpia
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+
+-- Estado y control
+local antikillEnabled = false
+local evading = false
+
+-- Función para obtener el personaje
+local function getCharacter()
+    local character = player.Character or player.CharacterAdded:Wait()
+    local humanoid = character:WaitForChild("Humanoid")
+    local hrp = character:WaitForChild("HumanoidRootPart")
+    return character, humanoid, hrp
+end
+
+-- Loop de evasión
+RunService.RenderStepped:Connect(function()
+    if not antikillEnabled then return end
+
+    local _, humanoid, hrp = getCharacter()
+
+    if humanoid.Health <= 16 and not evading then
+        evading = true
+        print("🛡️ Activando evasión con mayor elevación...")
+
+        local originPosition = hrp.Position
+        local elevatedHeight = originPosition.Y + 10
+
+        task.spawn(function()
+            while humanoid.Health < 30 and antikillEnabled do
+                local randomOffset = Vector3.new(
+                    math.random(-40, 40),
+                    0,
+                    math.random(-40, 40)
+                )
+
+                local targetPosition = originPosition + randomOffset
+                local moveDirection = (targetPosition - hrp.Position).Unit
+                local moveDistance = math.random(10, 25)
+
+                hrp.Velocity = moveDirection * moveDistance * 10
+                hrp.CFrame = CFrame.new(hrp.Position.X, elevatedHeight, hrp.Position.Z)
+
+                task.wait(0.05)
+            end
+
+            print("🟢 Salud restaurada o antikill desactivado. Evasión finalizada.")
+            evading = false
+        end)
+    end
+end)
+
+-- Cargar UI HydraHub
+local UILib = loadstring(game:HttpGet('https://raw.githubusercontent.com/StepBroFurious/Script/main/HydraHubUi.lua'))()
+local Window = UILib.new("Grand Piece Online", game.Players.LocalPlayer.UserId, "Buyer")
+
+-- Hacer la UI movible
+if Window and Window._ScreenGui and Window._ScreenGui:FindFirstChildOfClass("Frame") then
+    local frame = Window._ScreenGui:FindFirstChildOfClass("Frame")
+    frame.Active = true
+    frame.Draggable = true
+end
+
+-- Crear categorías y secciones
+local Category1 = Window:Category("Main", "http://www.roblox.com/asset/?id=8395621517")
+
+-- 🛡️ AntiKill Section
+local AntiKillTab = Category1:Button("AntiKill", "http://www.roblox.com/asset/?id=8395747586")
+local AntiKillSection = AntiKillTab:Section("Auto Evasion", "Left")
+
+AntiKillSection:Toggle({
+    Title = "AntiKill",
+    Description = "Activa evasión automática cuando tu vida esté baja.",
+    Default = false
+}, function(value)
+    antikillEnabled = value
+    print("🔘 AntiKill activado:", antikillEnabled)
+end)
+
+-- ⚔️ Combat Section (Vacía)
+local CombatTab = Category1:Button("Combat", "http://www.roblox.com/asset/?id=8395747586")
+local CombatSection = CombatTab:Section("Ataques", "Left")
+-- Futuras herramientas de combate aquí
+
+-- 🧩 Misc Section (Vacía)
+local MiscTab = Category1:Button("Misc", "http://www.roblox.com/asset/?id=8395747586")
+local MiscSection = MiscTab:Section("Extras", "Left")
+-- Funciones varias o utilidades futuras aquí
